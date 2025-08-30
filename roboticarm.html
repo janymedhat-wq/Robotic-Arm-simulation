@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robotic Arm Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 20px;
+        }
+        canvas {
+            display: block;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            border: 2px solid #444;
+            flex-grow: 1;
+        }
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                padding-top: 50px;
+            }
+        }
+        #controls {
+            background-color: #2a2a2a;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            max-width: 350px;
+        }
+        .slider-group {
+            margin-bottom: 20px;
+        }
+        .slider-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #444;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        .slider:hover {
+            opacity: 1;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #88bbff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 5px rgba(136, 187, 255, 0.5);
+        }
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #88bbff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <canvas id="canvas" class="w-full h-full"></canvas>
+        <div id="controls" class="flex flex-col gap-4">
+            <h2 class="text-xl font-bold mb-4">Manual Controls</h2>
+            <div class="slider-group">
+                <label for="joint1-slider" class="text-gray-300">Joint 1 (Base Rotation)</label>
+                <input type="range" min="-180" max="180" value="0" class="slider" id="joint1-slider">
+            </div>
+            <div class="slider-group">
+                <label for="joint2-slider" class="text-gray-300">Joint 2 (Shoulder Angle)</label>
+                <input type="range" min="-90" max="90" value="0" class="slider" id="joint2-slider">
+            </div>
+            <div class="slider-group">
+                <label for="joint3-slider" class="text-gray-300">Joint 3 (Elbow Angle)</label>
+                <input type="range" min="-90" max="90" value="0" class="slider" id="joint3-slider">
+            </div>
+            <div class="slider-group">
+                <label for="joint4-slider" class="text-gray-300">Joint 4 (Wrist Twist)</label>
+                <input type="range" min="-180" max="180" value="0" class="slider" id="joint4-slider">
+            </div>
+        </div>
+    </div>
+
+    <!-- Import three.js and OrbitControls from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        window.onload = function() {
+            // --- Scene Setup ---
+            const canvas = document.getElementById('canvas');
+            const controlsDiv = document.getElementById('controls');
+            const scene = new THREE.Scene();
+            
+            // Set up camera
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 15;
+            camera.position.y = 5;
+
+            // Set up renderer
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            function resizeCanvas() {
+                const container = canvas.parentElement;
+                renderer.setSize(container.clientWidth * 0.7, container.clientHeight * 0.9);
+                camera.aspect = (container.clientWidth * 0.7) / (container.clientHeight * 0.9);
+                camera.updateProjectionMatrix();
+            }
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas, false);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            // --- Robotic Arm Structure ---
+            
+            const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x4a4a4a });
+            const jointMaterial = new THREE.MeshPhongMaterial({ color: 0xffa500 });
+            const linkMaterial = new THREE.MeshPhongMaterial({ color: 0x88bbff });
+
+            // Create groups for hierarchical rotation
+            const group1 = new THREE.Group(); // Base rotation
+            const group2 = new THREE.Group(); // Shoulder joint
+            const group3 = new THREE.Group(); // Elbow joint
+            const group4 = new THREE.Group(); // Wrist joint
+            
+            // Base
+            const baseGeometry = new THREE.BoxGeometry(6, 1, 6);
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            group1.position.y = 0.5;
+            group1.add(base);
+            scene.add(group1);
+
+            // Lower arm (from base to shoulder joint)
+            const lowerArmGeometry = new THREE.CylinderGeometry(0.8, 0.8, 3, 32);
+            const lowerArm = new THREE.Mesh(lowerArmGeometry, linkMaterial);
+            lowerArm.position.y = 2; // Position above base
+            group2.position.y = 1; // Position relative to group1's origin
+            group1.add(group2);
+            group2.add(lowerArm);
+
+            // Upper arm (from shoulder to elbow joint)
+            const upperArmGeometry = new THREE.CylinderGeometry(0.6, 0.6, 5, 32);
+            const upperArm = new THREE.Mesh(upperArmGeometry, linkMaterial);
+            upperArm.position.y = 2.5;
+            group3.position.y = 5;
+            group2.add(group3);
+            group3.add(upperArm);
+            
+            // Forearm (from elbow to wrist)
+            const forearmGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4, 32);
+            const forearm = new THREE.Mesh(forearmGeometry, linkMaterial);
+            forearm.position.y = 2;
+            group4.position.y = 5;
+            group3.add(group4);
+            group4.add(forearm);
+
+            // End Effector (a simple gripper)
+            const effectorGeometry = new THREE.BoxGeometry(0.5, 0.5, 2);
+            const effector = new THREE.Mesh(effectorGeometry, linkMaterial);
+            effector.position.y = 2.5;
+            group4.add(effector);
+
+            // Add spheres to represent the joints
+            const joint1 = new THREE.Mesh(new THREE.SphereGeometry(1.2, 32, 32), jointMaterial);
+            joint1.position.y = 1;
+            group1.add(joint1);
+            
+            const joint2 = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), jointMaterial);
+            joint2.position.y = 5;
+            group2.add(joint2);
+
+            const joint3 = new THREE.Mesh(new THREE.SphereGeometry(0.8, 32, 32), jointMaterial);
+            joint3.position.y = 5;
+            group3.add(joint3);
+
+            // --- Sliders and Controls ---
+            const joint1Slider = document.getElementById('joint1-slider');
+            const joint2Slider = document.getElementById('joint2-slider');
+            const joint3Slider = document.getElementById('joint3-slider');
+            const joint4Slider = document.getElementById('joint4-slider');
+
+            joint1Slider.addEventListener('input', (e) => {
+                group1.rotation.y = THREE.MathUtils.degToRad(e.target.value);
+            });
+
+            joint2Slider.addEventListener('input', (e) => {
+                group2.rotation.x = THREE.MathUtils.degToRad(e.target.value);
+            });
+
+            joint3Slider.addEventListener('input', (e) => {
+                group3.rotation.x = THREE.MathUtils.degToRad(e.target.value);
+            });
+
+            joint4Slider.addEventListener('input', (e) => {
+                group4.rotation.y = THREE.MathUtils.degToRad(e.target.value);
+            });
+
+            // Camera Controls
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            controls.rotateSpeed = 0.5;
+            
+            // --- Animation Loop ---
+            const animate = function () {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            };
+
+            animate();
+        };
+    </script>
+</body>
+</html>
